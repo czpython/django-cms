@@ -142,15 +142,7 @@ class Migration(migrations.Migration):
         ),
         migrations.RemoveField(
             model_name='page',
-            name='site',
-        ),
-        migrations.RemoveField(
-            model_name='page',
             name='parent',
-        ),
-        migrations.RemoveField(
-            model_name='page',
-            name='revision_id',
         ),
         migrations.RemoveField(
             model_name='page',
