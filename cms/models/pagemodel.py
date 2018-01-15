@@ -120,6 +120,12 @@ class Page(six.with_metaclass(PageMetaClass, models.Model)):
     # Flag that marks a page as page-type
     is_page_type = models.BooleanField(default=False)
 
+    node = models.ForeignKey(
+        'PageNode',
+        related_name='cms_pages',
+        on_delete=models.CASCADE,
+    )
+
     # Managers
     objects = PageManager()
 
@@ -129,8 +135,7 @@ class Page(six.with_metaclass(PageMetaClass, models.Model)):
             ('publish_page', 'Can publish page'),
             ('edit_static_placeholder', 'Can edit static placeholders'),
         )
-        unique_together = (("publisher_is_draft", "site", "application_namespace"),
-                           ("reverse_id", "site", "publisher_is_draft"))
+        unique_together = ('node', 'publisher_is_draft')
         verbose_name = _('page')
         verbose_name_plural = _('pages')
         app_label = 'cms'
@@ -172,19 +177,6 @@ class Page(six.with_metaclass(PageMetaClass, models.Model)):
             # node is cached.
             # clear it to trigger a re-fetch with new tree attributes
             del self._nodes_cache[site.pk]
-
-    @cached_property
-    def node(self):
-        if hasattr(self, '_site_cache'):
-            #TODO: This changed in Django 2.0
-            return self.get_node_object(site=self.site)
-
-        try:
-            node = self._nodes_cache[self.site_id]
-        except KeyError:
-            node = self._get_node_object(self.site_id)
-            self._nodes_cache[self.site_id] = node
-        return node
 
     @classmethod
     def set_homepage(cls, page, user=None):
@@ -1701,9 +1693,10 @@ class PageNode(MP_Node):
     )
     site = models.ForeignKey(
         Site,
+        on_delete=models.CASCADE,
         verbose_name=_("site"),
-        help_text=_('The site the page is accessible at.'),
-        related_name='djangocms_page_nodes',
+        related_name='djangocms_nodes',
+        db_index=True,
     )
 
     objects = PageNodeManager()
@@ -1712,7 +1705,7 @@ class PageNode(MP_Node):
         app_label = 'cms'
         ordering = ('path',)
         default_permissions = ()
-        unique_together = ('page', 'site')
+        db_table = 'cms_treenode'
 
     def __str__(self):
         return self.path
