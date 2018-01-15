@@ -232,7 +232,10 @@ class CMSMenu(Menu):
             nodes = nodes.filter(page__title_set__language__in=languages)
             nodes = nodes.select_related('page', 'parent__page')
         else:
-            nodes = nodes.filter(page__publisher_public__title_set__language__in=languages)
+            nodes = nodes.filter(
+                page__publisher_public__title_set__published=True,
+                page__publisher_public__title_set__language__in=languages,
+            )
             nodes = nodes.select_related(
                 'page__publisher_public',
                 'parent__page__publisher_public',
