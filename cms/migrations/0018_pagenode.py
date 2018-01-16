@@ -110,6 +110,7 @@ class Migration(migrations.Migration):
                 ('depth', models.PositiveIntegerField()),
                 ('numchild', models.PositiveIntegerField(default=0)),
                 ('parent', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='children', to='cms.TreeNode')),
+                ('page', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='cms.Page', related_name='nodes')),
                 ('site', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='djangocms_nodes', to='sites.Site', verbose_name='site')),
             ],
             options={

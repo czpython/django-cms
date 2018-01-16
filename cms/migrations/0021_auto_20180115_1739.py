@@ -20,4 +20,8 @@ class Migration(migrations.Migration):
             model_name='page',
             name='revision_id',
         ),
+        migrations.RemoveField(
+            model_name='treenode',
+            name='page',
+        ),
     ]
