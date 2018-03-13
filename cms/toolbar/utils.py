@@ -1,4 +1,5 @@
 from __future__ import unicode_literals
+from collections import defaultdict, deque
 import json
 
 from django.utils.encoding import force_text
@@ -53,8 +54,8 @@ def get_plugin_toolbar_js(plugin, children=None, parents=None):
 
 def get_plugin_tree_as_json(request, plugins):
     from cms.utils.plugins import (
-        build_plugin_tree,
         downcast_plugins,
+        get_plugin_class,
         get_plugin_restrictions,
     )
 
@@ -67,37 +68,47 @@ def get_plugin_tree_as_json(request, plugins):
     host_page = placeholder.page
     copy_to_clipboard = placeholder.pk == toolbar.clipboard.pk
     plugins = downcast_plugins(plugins, select_placeholder=True)
-    plugin_tree = build_plugin_tree(plugins)
     get_plugin_info = get_plugin_toolbar_info
 
-    def collect_plugin_data(plugin):
-        child_classes, parent_classes = get_plugin_restrictions(
-            plugin=plugin,
-            page=host_page,
-            restrictions_cache=restrictions,
-        )
-        plugin_info = get_plugin_info(
-            plugin,
-            children=child_classes,
-            parents=parent_classes,
-        )
-
-        tree_data.append(plugin_info)
-
-        for plugin in plugin.child_plugin_instances or []:
-            collect_plugin_data(plugin)
+    delayed = defaultdict(deque)
 
     with force_language(toolbar.toolbar_language):
-        for root_plugin in plugin_tree:
-            collect_plugin_data(root_plugin)
+        plugins = list(plugins)
+        plugin_ids = frozenset(plugin.pk for plugin in plugins)
+
+        for plugin in reversed(plugins):
+            plugin_class = get_plugin_class(plugin.plugin_type)
+            child_classes, parent_classes = get_plugin_restrictions(
+                plugin=plugin,
+                page=host_page,
+                restrictions_cache=restrictions,
+            )
+            plugin_info = get_plugin_info(
+                plugin,
+                children=child_classes,
+                parents=parent_classes,
+            )
             context = {
-                'plugin': root_plugin,
+                'plugin': plugin,
                 'request': request,
                 'clipboard': copy_to_clipboard,
                 'cms_toolbar': toolbar,
+                'allow_children': plugin_class.allow_children,
+                'disable_child_plugins': plugin_class.disable_child_plugins,
             }
-            tree_structure.append(template.render(context))
-    tree_data.reverse()
+
+            if plugin.pk in delayed:
+                context['children'] = '\n'.join(delayed.pop(plugin.pk))
+
+            content = template.render(context)
+
+            if plugin.parent_id and plugin.parent_id in plugin_ids:
+                # Continue aggregating the content
+                delayed[plugin.parent_id].appendleft(content)
+            else:
+                # The plugin has no parent or we're rendering a sub-tree
+                tree_structure.append(content)
+            tree_data.append(plugin_info)
     return json.dumps({'html': '\n'.join(tree_structure), 'plugins': tree_data})
 
 

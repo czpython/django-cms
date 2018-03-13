@@ -271,48 +271,30 @@ def add_plugin(placeholder, plugin_type, language, position='last-child',
 
     # validate and normalize plugin type
     plugin_model, plugin_type = _verify_plugin_type(plugin_type)
+
     if target:
         if position == 'last-child':
-            if CMSPlugin.node_order_by:
-                position = 'sorted-child'
-            new_pos = CMSPlugin.objects.filter(parent=target).count()
+            new_pos = placeholder.get_next_plugin_position(language, parent=target, insert_order='last')
             parent_id = target.pk
         elif position == 'first-child':
-            new_pos = 0
-            if CMSPlugin.node_order_by:
-                position = 'sorted-child'
+            new_pos = placeholder.get_next_plugin_position(language, parent=target, insert_order='first')
             parent_id = target.pk
         elif position == 'left':
             new_pos = target.position
-            if CMSPlugin.node_order_by:
-                position = 'sorted-sibling'
             parent_id = target.parent_id
         elif position == 'right':
             new_pos = target.position + 1
-            if CMSPlugin.node_order_by:
-                position = 'sorted-sibling'
             parent_id = target.parent_id
         else:
             raise Exception('position not supported: %s' % position)
-        if position == 'last-child' or position == 'first-child':
-            qs = CMSPlugin.objects.filter(language=language, parent=target, position__gte=new_pos,
-                                          placeholder=placeholder)
-        else:
-            qs = CMSPlugin.objects.filter(language=language, parent=target.parent_id, position__gte=new_pos,
-                                          placeholder=placeholder)
-        for pl in qs:
-            pl.position += 1
-            pl.save()
     else:
+        assert position in ('first-child', 'last-child')
         if position == 'last-child':
-            new_pos = CMSPlugin.objects.filter(language=language, parent__isnull=True, placeholder=placeholder).count()
+            new_pos = placeholder.get_next_plugin_position(language, insert_order='last')
         else:
-            new_pos = 0
-            for pl in CMSPlugin.objects.filter(language=language, parent__isnull=True, position__gte=new_pos,
-                                               placeholder=placeholder):
-                pl.position += 1
-                pl.save()
+            new_pos = 1
         parent_id = None
+
     plugin_base = CMSPlugin(
         plugin_type=plugin_type,
         placeholder=placeholder,
@@ -320,11 +302,7 @@ def add_plugin(placeholder, plugin_type, language, position='last-child',
         language=language,
         parent_id=parent_id,
     )
-
-    plugin_base = plugin_base.add_root(instance=plugin_base)
-
-    if target:
-        plugin_base = plugin_base.move(target, pos=position)
+    plugin_base = placeholder.add_plugin(plugin_base)
     plugin = plugin_model(**data)
     plugin_base.set_base_attr(plugin)
     plugin.save()

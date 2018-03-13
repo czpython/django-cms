@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from copy import deepcopy
-from collections import defaultdict
+from collections import defaultdict, deque
 from itertools import groupby, starmap
 from operator import attrgetter, itemgetter
 
@@ -48,7 +48,7 @@ def assign_plugins(request, placeholders, template=None, lang=None, is_fallback=
     lang = lang or get_language_from_request(request)
     qs = get_cmsplugin_queryset(request)
     qs = qs.filter(placeholder__in=placeholders, language=lang)
-    plugins = list(qs.order_by('placeholder', 'path'))
+    plugins = list(qs.order_by('placeholder'))
     fallbacks = defaultdict(list)
     # If no plugin is present in the current placeholder we loop in the fallback languages
     # and get the first available set of plugins
@@ -75,7 +75,7 @@ def assign_plugins(request, placeholders, template=None, lang=None, is_fallback=
     plugin_groups = dict((key, list(plugins)) for key, plugins in groupby(plugins, attrgetter('placeholder_id')))
     all_plugins_groups = plugin_groups.copy()
     for group in plugin_groups:
-        plugin_groups[group] = build_plugin_tree(plugin_groups[group])
+        plugin_groups[group] = get_plugins_as_layered_tree(plugin_groups[group])
     groups = fallbacks.copy()
     groups.update(plugin_groups)
     for placeholder in placeholders:
@@ -148,6 +148,20 @@ def build_plugin_tree(plugins):
     return sorted(root_plugins, key=attrgetter('position'))
 
 
+def get_plugins_as_layered_tree(plugins):
+    delayed = defaultdict(deque)
+    root_plugins = deque()
+
+    for plugin in reversed(plugins):
+        plugin.child_plugin_instances = delayed[plugin.pk]
+
+        if plugin.parent_id:
+            delayed[plugin.parent_id].appendleft(plugin)
+        else:
+            root_plugins.appendleft(plugin)
+    return root_plugins
+
+
 def get_plugin_restrictions(plugin, page=None, restrictions_cache=None):
     if restrictions_cache is None:
         restrictions_cache = {}
@@ -184,8 +198,14 @@ def get_plugin_restrictions(plugin, page=None, restrictions_cache=None):
 
 
 def copy_plugins_to_placeholder(plugins, placeholder, language=None, root_plugin=None):
+    plugin_count = len(plugins)
     plugin_pairs = []
     plugins_by_id = {}
+    # Keeps track of the next available position per language.
+    positions_by_language = {}
+
+    if root_plugin:
+        language = root_plugin.language
 
     for source_plugin in get_bound_plugins(plugins):
         parent = plugins_by_id.get(source_plugin.parent_id, root_plugin)
@@ -198,20 +218,34 @@ def copy_plugins_to_placeholder(plugins, placeholder, language=None, root_plugin
             new_plugin.language = language or new_plugin.language
             new_plugin.placeholder = placeholder
             new_plugin.parent = parent
-            new_plugin.numchild = 0
         else:
             new_plugin = plugin_model(
                 language=(language or source_plugin.language),
                 parent=parent,
                 plugin_type=source_plugin.plugin_type,
                 placeholder=placeholder,
-                position=source_plugin.position,
             )
 
-        if parent:
-            new_plugin = parent.add_child(instance=new_plugin)
-        else:
-            new_plugin = CMSPlugin.add_root(instance=new_plugin)
+        try:
+            position = positions_by_language[new_plugin.language]
+        except KeyError:
+            # The position is relative to language.
+            position = placeholder.get_next_plugin_position(
+                language=new_plugin.language,
+                parent=new_plugin.parent,
+                insert_order='last',
+            )
+            # Because it is the first time this language is processed,
+            # shift all plugins to the right of the next position.
+            placeholder._shift_plugin_positions(
+                language,
+                start=position,
+                offset=plugin_count,
+            )
+
+        new_plugin.position = position
+        new_plugin.save()
+        positions_by_language[new_plugin.language] = position + 1
 
         if plugin_model != CMSPlugin:
             new_plugin.copy_relations(source_plugin)
@@ -224,6 +258,9 @@ def copy_plugins_to_placeholder(plugins, placeholder, language=None, root_plugin
     # nested plugins and need to update their content based on the new plugins.
     for new_plugin, old_plugin in plugin_pairs:
         new_plugin.post_copy(old_plugin, plugin_pairs)
+
+    for language in positions_by_language:
+        placeholder._recalculate_plugin_positions(language)
     return [pair[0] for pair in plugin_pairs]
 
 
