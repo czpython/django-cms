@@ -946,7 +946,6 @@ class PluginsTestCase(PluginsTestBaseCase):
             response = self.client.post(endpoint, post)
             self.assertEqual(response.status_code, 200)
 
-            from cms.utils.plugins import build_plugin_tree
             build_plugin_tree(page.placeholders.get(slot='right-column').get_plugins_list())
 
     def test_custom_plugin_urls(self):

@@ -38,7 +38,11 @@ from cms.toolbar.utils import get_plugin_tree_as_json
 from cms.utils import copy_plugins, get_current_site
 from cms.utils.conf import get_cms_setting
 from cms.utils.i18n import get_language_list, get_language_code
-from cms.utils.plugins import has_reached_plugin_limit, reorder_plugins
+from cms.utils.plugins import (
+    copy_plugins_to_placeholder,
+    has_reached_plugin_limit,
+    reorder_plugins,
+)
 from cms.utils.urlutils import admin_reverse
 
 _no_default = object()
@@ -291,8 +295,8 @@ class PlaceholderAdminMixin(object):
             - placeholder_id
             - plugin_type
             - plugin_language
+            - plugin_position
             - plugin_parent (optional)
-            - plugin_position (optional)
         """
         form = PluginAddValidationForm(request.GET)
 
@@ -311,19 +315,6 @@ class PlaceholderAdminMixin(object):
             message = force_text(_('You do not have permission to add a plugin'))
             return HttpResponseForbidden(message)
 
-        parent = plugin_data.get('plugin_parent')
-
-        if parent:
-            position = parent.cmsplugin_set.count()
-        else:
-            position = CMSPlugin.objects.filter(
-                parent__isnull=True,
-                language=plugin_data['plugin_language'],
-                placeholder=placeholder,
-            ).count()
-
-        plugin_data['position'] = position
-
         plugin_class = plugin_pool.get_plugin(plugin_type)
         plugin_instance = plugin_class(plugin_class.model, self.admin_site)
 
@@ -335,15 +326,12 @@ class PlaceholderAdminMixin(object):
             'placeholder': plugin_data['placeholder_id'],
             'parent': plugin_data.get('plugin_parent', None),
             'plugin_type': plugin_data['plugin_type'],
-            'position': plugin_data['position'],
+            'position': plugin_data['plugin_position'],
         }
 
         response = plugin_instance.add_view(request)
 
         plugin = getattr(plugin_instance, 'saved_object', None)
-
-        if plugin:
-            plugin.placeholder.mark_as_dirty(plugin.language, clear_cache=False)
 
         if plugin_instance._operation_token:
             tree_order = placeholder.get_plugin_tree_order(plugin.parent_id)
@@ -417,13 +405,7 @@ class PlaceholderAdminMixin(object):
             pk=source_plugin_id,
             language=source_language,
         )
-
-        old_plugins = (
-            CMSPlugin
-            .get_tree(parent=source_plugin)
-            .filter(placeholder=source_placeholder)
-            .order_by('path')
-        )
+        old_plugins = [source_plugin] + list(source_plugin.get_descendants())
 
         if not self.has_copy_plugins_permission(request, old_plugins):
             message = _('You do not have permission to copy these plugins.')
@@ -432,12 +414,12 @@ class PlaceholderAdminMixin(object):
         # Empty the clipboard
         target_placeholder.clear()
 
-        plugin_pairs = copy_plugins.copy_plugins_to(
+        copied_plugins = copy_plugins_to_placeholder(
             old_plugins,
-            to_placeholder=target_placeholder,
-            to_language=target_language,
+            placeholder=target_placeholder,
+            language=target_language,
         )
-        return plugin_pairs[0][0]
+        return copied_plugins[0]
 
     def _copy_placeholder_to_clipboard(self, request, source_placeholder, target_placeholder):
         source_language = request.POST['source_language']
@@ -464,11 +446,10 @@ class PlaceholderAdminMixin(object):
             language=target_language,
             placeholder=target_placeholder,
         )
-
-        copy_plugins.copy_plugins_to(
+        copy_plugins_to_placeholder(
             old_plugins,
-            to_placeholder=reference.placeholder_ref,
-            to_language=target_language,
+            placeholder=reference.placeholder_ref,
+            language=target_language,
         )
         return reference
 
@@ -509,31 +490,12 @@ class PlaceholderAdminMixin(object):
             target_order=target_tree_order,
         )
 
-        copied_plugins = copy_plugins.copy_plugins_to(
-            old_plugins,
-            to_placeholder=target_placeholder,
-            to_language=target_language,
-        )
+        copied_plugins = copy_plugins_to_placeholder(old_plugins, target_placeholder, language=target_language)
+        new_plugin_ids = (new.pk for new in copied_plugins)
 
-        new_plugin_ids = (new.pk for new, old in copied_plugins)
-
-        # Creates a list of PKs for the top-level plugins ordered by
-        # their position.
-        top_plugins = (pair for pair in copied_plugins if not pair[0].parent_id)
-        top_plugins_pks = [p[0].pk for p in sorted(top_plugins, key=lambda pair: pair[1].position)]
-
-        # All new plugins are added to the bottom
-        target_tree_order = target_tree_order + top_plugins_pks
-
-        reorder_plugins(
-            target_placeholder,
-            parent_id=None,
-            language=target_language,
-            order=target_tree_order,
-        )
         target_placeholder.mark_as_dirty(target_language, clear_cache=False)
 
-        new_plugins = CMSPlugin.objects.filter(pk__in=new_plugin_ids).order_by('path')
+        new_plugins = CMSPlugin.objects.filter(pk__in=new_plugin_ids)
         new_plugins = list(new_plugins)
 
         self._send_post_placeholder_operation(
@@ -709,14 +671,13 @@ class PlaceholderAdminMixin(object):
                 request,
                 plugin=plugin,
                 target_parent=target_parent,
-                target_language=target_language,
+                target_position=request.POST['target_position'],
                 target_placeholder=placeholder,
-                tree_order=order,
             )
 
         if new_plugin and fetch_tree:
             root = (new_plugin.parent or new_plugin)
-            new_plugins = [root] + list(root.get_descendants().order_by('path'))
+            new_plugins = [root] + list(root.get_descendants())
 
         # Mark the target placeholder as dirty
         placeholder.mark_as_dirty(target_language)
@@ -858,21 +819,14 @@ class PlaceholderAdminMixin(object):
         )
         return new_plugins
 
-    def _move_plugin(self, request, plugin, target_language,
-                     target_placeholder, tree_order, target_parent=None):
+    def _move_plugin(self, request, plugin, target_position, target_placeholder=None, target_parent=None):
         if not self.has_move_plugin_permission(request, plugin, target_placeholder):
             message = force_text(_("You have no permission to move this plugin"))
             raise PermissionDenied(message)
 
-        plugin_data = {
-            'language': target_language,
-            'placeholder': target_placeholder,
-        }
-
-        source_language = plugin.language
         source_placeholder = plugin.placeholder
         source_tree_order = source_placeholder.get_plugin_tree_order(
-            language=source_language,
+            language=plugin.language,
             parent_id=plugin.parent_id,
         )
 
@@ -883,7 +837,7 @@ class PlaceholderAdminMixin(object):
 
         if target_placeholder != source_placeholder:
             target_tree_order = target_placeholder.get_plugin_tree_order(
-                language=target_language,
+                language=plugin.language,
                 parent_id=target_parent_id,
             )
         else:
@@ -893,70 +847,50 @@ class PlaceholderAdminMixin(object):
             request,
             operation=operations.MOVE_PLUGIN,
             plugin=plugin,
-            source_language=source_language,
+            source_language=plugin.language,
             source_placeholder=source_placeholder,
             source_parent_id=plugin.parent_id,
             source_order=source_tree_order,
-            target_language=target_language,
             target_placeholder=target_placeholder,
             target_parent_id=target_parent_id,
             target_order=target_tree_order,
         )
 
-        if target_parent and plugin.parent != target_parent:
-            # Plugin is being moved to another tree (under another parent)
-            updated_plugin = plugin.update(refresh=True, parent=target_parent, **plugin_data)
-            updated_plugin = updated_plugin.move(target_parent, pos='last-child')
-        elif target_parent:
-            # Plugin is being moved within the same tree (different position, same parent)
-            updated_plugin = plugin.update(refresh=True, **plugin_data)
-        else:
-            # Plugin is being moved to the root (no parent)
-            target = CMSPlugin.get_last_root_node()
-            updated_plugin = plugin.update(refresh=True, parent=None, **plugin_data)
-            updated_plugin = updated_plugin.move(target, pos='right')
+        source_placeholder.move_plugin(
+            plugin=plugin,
+            target_position=target_position,
+            target_placeholder=target_placeholder,
+            target_plugin=target_parent,
+        )
 
-        # Update all children to match the parent's
-        # language and placeholder
-        updated_plugin.get_descendants().update(**plugin_data)
+        # Refresh plugin to get new position values
+        plugin.refresh_from_db()
 
         # Avoid query by removing the plugin being moved
         # from the source order
         new_source_order = list(source_tree_order)
-        new_source_order.remove(updated_plugin.pk)
+        new_source_order.remove(plugin.pk)
 
-        # Reorder all plugins in the target placeholder according to the
-        # passed order
-        new_target_order = [int(pk) for pk in tree_order]
-        reorder_plugins(
-            target_placeholder,
-            parent_id=target_parent_id,
-            language=target_language,
-            order=new_target_order,
-        )
-        target_placeholder.mark_as_dirty(target_language, clear_cache=False)
+        target_placeholder.mark_as_dirty(plugin.language, clear_cache=False)
 
         if source_placeholder != target_placeholder:
-            source_placeholder.mark_as_dirty(source_language, clear_cache=False)
-
-        # Refresh plugin to get new tree and position values
-        updated_plugin.refresh_from_db()
+            source_placeholder.mark_as_dirty(plugin.language, clear_cache=False)
 
         self._send_post_placeholder_operation(
             request,
             operation=operations.MOVE_PLUGIN,
-            plugin=updated_plugin.get_bound_plugin(),
+            plugin=plugin.get_bound_plugin(),
             token=action_token,
-            source_language=source_language,
+            source_language=plugin.language,
             source_placeholder=source_placeholder,
             source_parent_id=plugin.parent_id,
             source_order=new_source_order,
-            target_language=target_language,
+            target_language=plugin.language,
             target_placeholder=target_placeholder,
             target_parent_id=target_parent_id,
-            target_order=new_target_order,
+            target_order=[],
         )
-        return updated_plugin
+        return plugin
 
     def _cut_plugin(self, request, plugin, target_language,  target_placeholder):
         if not self.has_move_plugin_permission(request, plugin, target_placeholder):
@@ -1049,23 +983,12 @@ class PlaceholderAdminMixin(object):
                 placeholder=placeholder,
                 tree_order=plugin_tree_order,
             )
-
-            plugin.delete()
+            placeholder.delete_plugin(plugin)
             placeholder.mark_as_dirty(plugin.language, clear_cache=False)
-            reorder_plugins(
-                placeholder=placeholder,
-                parent_id=plugin.parent_id,
-                language=plugin.language,
-            )
 
             self.log_deletion(request, plugin, obj_display)
             self.message_user(request, _('The %(name)s plugin "%(obj)s" was deleted successfully.') % {
                 'name': force_text(opts.verbose_name), 'obj': force_text(obj_display)})
-
-            # Avoid query by removing the plugin being deleted
-            # from the tree order list
-            new_plugin_tree_order = list(plugin_tree_order)
-            new_plugin_tree_order.remove(plugin.pk)
 
             self._send_post_placeholder_operation(
                 request,
@@ -1073,7 +996,7 @@ class PlaceholderAdminMixin(object):
                 token=operation_token,
                 plugin=plugin,
                 placeholder=placeholder,
-                tree_order=new_plugin_tree_order,
+                tree_order=plugin_tree_order,
             )
             return HttpResponseRedirect(admin_reverse('index', current_app=self.admin_site.name))
 
