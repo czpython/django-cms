@@ -48,7 +48,7 @@ def assign_plugins(request, placeholders, template=None, lang=None, is_fallback=
     lang = lang or get_language_from_request(request)
     qs = get_cmsplugin_queryset(request)
     qs = qs.filter(placeholder__in=placeholders, language=lang)
-    plugins = list(qs.order_by('placeholder'))
+    plugins = list(qs)
     fallbacks = defaultdict(list)
     # If no plugin is present in the current placeholder we loop in the fallback languages
     # and get the first available set of plugins
@@ -70,19 +70,24 @@ def assign_plugins(request, placeholders, template=None, lang=None, is_fallback=
     if not plugins:
         plugins = create_default_plugins(request, non_fallback_phs, template, lang)
     plugins = downcast_plugins(plugins, non_fallback_phs, request=request)
+
     # split the plugins up by placeholder
-    # Plugins should still be sorted by placeholder
-    plugin_groups = dict((key, list(plugins)) for key, plugins in groupby(plugins, attrgetter('placeholder_id')))
-    all_plugins_groups = plugin_groups.copy()
-    for group in plugin_groups:
-        plugin_groups[group] = get_plugins_as_layered_tree(plugin_groups[group])
-    groups = fallbacks.copy()
-    groups.update(plugin_groups)
+    plugins_by_placeholder = defaultdict(list)
+
+    for plugin in plugins:
+        plugins_by_placeholder[plugin.placeholder_id].append(plugin)
+
     for placeholder in placeholders:
+        all_plugins = plugins_by_placeholder[placeholder.pk]
+
+        if all_plugins:
+            layered_plugins = get_plugins_as_layered_tree(all_plugins)
+        else:
+            layered_plugins = fallbacks.get(placeholder.pk, [])
         # This is all the plugins.
-        setattr(placeholder, '_all_plugins_cache', all_plugins_groups.get(placeholder.pk, []))
+        setattr(placeholder, '_all_plugins_cache', all_plugins)
         # This one is only the root plugins.
-        setattr(placeholder, '_plugins_cache', groups.get(placeholder.pk, []))
+        setattr(placeholder, '_plugins_cache', layered_plugins)
 
 
 def create_default_plugins(request, placeholders, template, lang):
