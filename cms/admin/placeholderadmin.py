@@ -571,14 +571,11 @@ class PlaceholderAdminMixin(object):
 
         plugin = self._get_plugin_from_id(plugin_id)
 
-        try:
+        if request.POST.get('placeholder_id'):
             placeholder_id = get_int(request.POST.get('placeholder_id'))
-        except TypeError:
-            raise RuntimeError("'placeholder_id' is a required parameter.")
-        except ValueError:
-            raise RuntimeError("'placeholder_id' must be an integer string.")
-
-        placeholder = Placeholder.objects.get(pk=placeholder_id)
+            placeholder = Placeholder.objects.get(pk=placeholder_id)
+        else:
+            placeholder = plugin.placeholder
 
         # The rest are optional
         parent_id = get_int(request.POST.get('plugin_parent', ""), None)
