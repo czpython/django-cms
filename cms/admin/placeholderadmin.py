@@ -575,7 +575,7 @@ class PlaceholderAdminMixin(object):
             placeholder_id = get_int(request.POST.get('placeholder_id'))
             placeholder = Placeholder.objects.get(pk=placeholder_id)
         else:
-            placeholder = plugin.placeholder
+            placeholder = None
 
         # The rest are optional
         parent_id = get_int(request.POST.get('plugin_parent', ""), None)
@@ -588,30 +588,13 @@ class PlaceholderAdminMixin(object):
 
         order = request.POST.getlist("plugin_order[]")
 
-        if placeholder != source_placeholder:
+        if placeholder and placeholder != source_placeholder:
             try:
                 template = self.get_placeholder_template(request, placeholder)
                 has_reached_plugin_limit(placeholder, plugin.plugin_type,
                                          target_language, template=template)
             except PluginLimitReached as er:
                 return HttpResponseBadRequest(er)
-
-        # order should be a list of plugin primary keys
-        # it's important that the plugins being referenced
-        # are all part of the same tree.
-        exclude_from_order_check = ['__COPY__', str(plugin.pk)]
-        ordered_plugin_ids = [int(pk) for pk in order if pk not in exclude_from_order_check]
-        plugins_in_tree_count = (
-            placeholder
-            .get_plugins(target_language)
-            .filter(parent=parent_id, pk__in=ordered_plugin_ids)
-            .count()
-        )
-
-        if len(ordered_plugin_ids) != plugins_in_tree_count:
-            # order does not match the tree on the db
-            message = _('order parameter references plugins in different trees')
-            return HttpResponseBadRequest(force_text(message))
 
         # True if the plugin is not being moved from the clipboard
         # to a placeholder or from a placeholder to the clipboard.
@@ -677,12 +660,12 @@ class PlaceholderAdminMixin(object):
             new_plugins = [root] + list(root.get_descendants())
 
         # Mark the target placeholder as dirty
-        placeholder.mark_as_dirty(target_language)
-
-        if placeholder != source_placeholder:
-            # Plugin is being moved or copied into a separate placeholder
-            # Mark source placeholder as dirty
-            source_placeholder.mark_as_dirty(plugin.language)
+        # placeholder.mark_as_dirty(target_language)
+        #
+        # if placeholder != source_placeholder:
+        #     # Plugin is being moved or copied into a separate placeholder
+        #     # Mark source placeholder as dirty
+        #     source_placeholder.mark_as_dirty(plugin.language)
         data = get_plugin_tree_as_json(request, new_plugins)
         return HttpResponse(data, content_type='application/json')
 
@@ -817,22 +800,26 @@ class PlaceholderAdminMixin(object):
         return new_plugins
 
     def _move_plugin(self, request, plugin, target_position, target_placeholder=None, target_parent=None):
-        if not self.has_move_plugin_permission(request, plugin, target_placeholder):
-            message = force_text(_("You have no permission to move this plugin"))
-            raise PermissionDenied(message)
-
         source_placeholder = plugin.placeholder
         source_tree_order = source_placeholder.get_plugin_tree_order(
             language=plugin.language,
             parent_id=plugin.parent_id,
         )
 
+        if not self.has_move_plugin_permission(request, plugin, source_placeholder):
+            message = force_text(_("You have no permission to move this plugin"))
+            raise PermissionDenied(message)
+
+        if target_placeholder and not self.has_move_plugin_permission(request, plugin, source_placeholder):
+            message = force_text(_("You have no permission to move this plugin"))
+            raise PermissionDenied(message)
+
         if target_parent:
             target_parent_id = target_parent.pk
         else:
             target_parent_id = None
 
-        if target_placeholder != source_placeholder:
+        if target_placeholder and target_placeholder != source_placeholder:
             target_tree_order = target_placeholder.get_plugin_tree_order(
                 language=plugin.language,
                 parent_id=target_parent_id,
@@ -855,7 +842,7 @@ class PlaceholderAdminMixin(object):
 
         source_placeholder.move_plugin(
             plugin=plugin,
-            target_position=target_position,
+            target_position=int(target_position),
             target_placeholder=target_placeholder,
             target_plugin=target_parent,
         )
@@ -868,10 +855,10 @@ class PlaceholderAdminMixin(object):
         new_source_order = list(source_tree_order)
         new_source_order.remove(plugin.pk)
 
-        target_placeholder.mark_as_dirty(plugin.language, clear_cache=False)
+        if target_placeholder:
+            target_placeholder.mark_as_dirty(plugin.language, clear_cache=False)
 
-        if source_placeholder != target_placeholder:
-            source_placeholder.mark_as_dirty(plugin.language, clear_cache=False)
+        source_placeholder.mark_as_dirty(plugin.language, clear_cache=False)
 
         self._send_post_placeholder_operation(
             request,

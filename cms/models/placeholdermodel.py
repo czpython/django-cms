@@ -606,7 +606,7 @@ class Placeholder(models.Model):
         last_plugin = target_tree.last()
         source_plugin_range = (plugin.position, plugin.position + plugin._get_descendants_count())
 
-        assert target_position <= last_plugin.position
+        #assert target_position <= last_plugin.position
 
         if target_position < plugin.position:
             # Moving left
