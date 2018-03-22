@@ -600,7 +600,7 @@ class Placeholder(models.Model):
                 target_plugin=target_plugin,
             )
 
-        assert plugin.position != target_position
+        #assert plugin.position != target_position
 
         target_tree = self.get_plugins(plugin.language)
         last_plugin = target_tree.last()
@@ -643,7 +643,7 @@ class Placeholder(models.Model):
                 position__gte=plugin.position
             ).update(position=models.F('position') + last_plugin.position)
 
-        if target_plugin and plugin.parent != target_plugin:
+        if plugin.parent != target_plugin:
             # Plugin is being moved to another tree (under another parent)
             # OR plugin is being moved to the root (no parent)
             plugin.update(parent=target_plugin)

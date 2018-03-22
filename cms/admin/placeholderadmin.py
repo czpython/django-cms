@@ -601,16 +601,17 @@ class PlaceholderAdminMixin(object):
         move_a_plugin = not move_a_copy and not move_to_clipboard
 
         if parent_id and plugin.parent_id != parent_id:
-            target_parent = get_object_or_404(CMSPlugin, pk=parent_id)
+            target_pl = placeholder or plugin.placeholder
 
-            if move_a_plugin and target_parent.placeholder_id != placeholder.pk:
-                return HttpResponseBadRequest(force_text(
-                    _('parent must be in the same placeholder')))
-
-            if move_a_plugin and target_parent.language != target_language:
-                return HttpResponseBadRequest(force_text(
-                    _('parent must be in the same language as '
-                      'plugin_language')))
+            if move_a_plugin:
+                target_parent = get_object_or_404(
+                    CMSPlugin,
+                    pk=parent_id,
+                    language=target_language,
+                    placeholder=target_pl,
+                )
+            else:
+                target_parent = get_object_or_404(CMSPlugin, pk=parent_id)
         elif parent_id:
             target_parent = plugin.parent
         else:
