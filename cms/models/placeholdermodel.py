@@ -346,6 +346,9 @@ class Placeholder(models.Model):
             return self.cmsplugin_set.filter(language=language)
         return self.cmsplugin_set.all()
 
+    def has_plugins(self, language=None):
+        return self.get_plugins(language).exists()
+
     def get_filled_languages(self):
         """
         Returns language objects for every language for which the placeholder
@@ -600,13 +603,9 @@ class Placeholder(models.Model):
                 target_plugin=target_plugin,
             )
 
-        #assert plugin.position != target_position
-
         target_tree = self.get_plugins(plugin.language)
         last_plugin = target_tree.last()
         source_plugin_range = (plugin.position, plugin.position + plugin._get_descendants_count())
-
-        #assert target_position <= last_plugin.position
 
         if target_position < plugin.position:
             # Moving left
@@ -677,6 +676,7 @@ class Placeholder(models.Model):
             )
 
         plugin.update(parent=target_plugin, placeholder=target_placeholder)
+        # TODO: More efficient is to do raw sql update
         plugin.get_descendants().update(placeholder=target_placeholder)
         self._recalculate_plugin_positions(plugin.language)
         target_placeholder._recalculate_plugin_positions(plugin.language)

@@ -180,12 +180,16 @@ def get_plugin_restrictions(plugin, page=None, restrictions_cache=None):
     return (child_classes, parent_classes)
 
 
-def copy_plugins_to_placeholder(plugins, placeholder, language=None, root_plugin=None):
+def copy_plugins_to_placeholder(plugins, placeholder, language=None,
+                                root_plugin=None, start_positions=None):
     plugin_count = len(plugins)
     plugin_pairs = []
     plugins_by_id = {}
     # Keeps track of the next available position per language.
     positions_by_language = {}
+
+    if start_positions:
+        positions_by_language.update(start_positions)
 
     if root_plugin:
         language = root_plugin.language

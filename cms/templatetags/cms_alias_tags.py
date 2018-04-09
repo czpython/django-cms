@@ -25,7 +25,7 @@ def render_alias_plugin(context, instance):
         can_see_content = True
 
     if can_see_content and instance.plugin:
-        plugins = instance.plugin.get_descendants().order_by('placeholder', 'path')
+        plugins = instance.plugin.get_descendants()
         plugins = [instance.plugin] + list(plugins)
         plugins = downcast_plugins(plugins, request=request)
         plugins = list(plugins)
