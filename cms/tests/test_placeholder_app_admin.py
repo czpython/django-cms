@@ -136,18 +136,17 @@ class AppAdminTest(AppAdminTestCase):
         """
         superuser = self.get_superuser()
         source_placeholder = self._obj.placeholder
-        target_placeholder = source_placeholder
 
         plugin_1 = self._add_plugin_to_placeholder(source_placeholder)
         plugin_2 = self._add_plugin_to_placeholder(source_placeholder)
 
         with self.login_user_context(superuser):
             with self.settings(CMS_PLACEHOLDER_CONF=self.placeholderconf):
-                data = self._get_move_data(plugin_1, position=1, placeholder=target_placeholder)
+                data = self._get_move_data(plugin_1, position=1)
                 endpoint = self.get_move_plugin_uri(plugin_1, container=Example1)
                 response = self.client.post(endpoint, data)  # first
                 self.assertEqual(response.status_code, 200)
-                data = self._get_move_data(plugin_2, position=2, placeholder=target_placeholder)
+                data = self._get_move_data(plugin_2, position=2)
                 endpoint = self.get_move_plugin_uri(plugin_2, container=Example1)
                 response = self.client.post(endpoint, data)  # second
                 self.assertEqual(response.status_code, 200)
@@ -205,13 +204,12 @@ class AppAdminTest(AppAdminTestCase):
         """
         superuser = self.get_superuser()
         source_placeholder = self._obj.placeholder
-        target_placeholder = source_placeholder
 
         plugin_1 = self._add_plugin_to_placeholder(source_placeholder, 'StylePlugin')
 
         with self.login_user_context(superuser):
             with self.settings(CMS_PLACEHOLDER_CONF=self.placeholderconf):
-                data = self._get_move_data(plugin_1, position=1, placeholder=target_placeholder)
+                data = self._get_move_data(plugin_1, position=1)
                 endpoint = self.get_move_plugin_uri(plugin_1, container=Example1)
                 response = self.client.post(endpoint, data)  # first
                 self.assertEqual(response.status_code, 200)
@@ -726,8 +724,8 @@ class AppAdminPermissionsTest(AppAdminTestCase):
                 'plugin_id': placeholder_plugin.pk,
                 'plugin_parent': '',
                 'target_language': 'fr',
-                'plugin_order[]': '__COPY__',
                 'move_a_copy': True,
+                'target_position': target_placeholder.get_next_plugin_position('fr', insert_order='last'),
             }
             endpoint = self.get_move_plugin_uri(placeholder_plugin, container=Example1)
             response = self.client.post(endpoint, data)
@@ -771,8 +769,8 @@ class AppAdminPermissionsTest(AppAdminTestCase):
                 'plugin_id': placeholder_plugin.pk,
                 'plugin_parent': '',
                 'target_language': 'fr',
-                'plugin_order[]': '__COPY__',
                 'move_a_copy': True,
+                'target_position': target_placeholder.get_next_plugin_position('fr', insert_order='last'),
             }
             endpoint = self.get_move_plugin_uri(placeholder_plugin, container=Example1)
             response = self.client.post(endpoint, data)
@@ -790,8 +788,8 @@ class AppAdminPermissionsTest(AppAdminTestCase):
                 'plugin_id': placeholder_plugin.pk,
                 'plugin_parent': '',
                 'target_language': 'fr',
-                'plugin_order[]': '__COPY__',
                 'move_a_copy': True,
+                'target_position': target_placeholder.get_next_plugin_position('fr', insert_order='last'),
             }
             response = self.client.post(endpoint, data)
             self.assertEqual(response.status_code, 403)

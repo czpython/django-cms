@@ -55,9 +55,6 @@ class FixTreeCommand(SubcommandsCommand):
 
         for root in root_nodes.order_by('site__pk', 'path'):
             self._update_descendants_tree(root)
-
-        self.stdout.write('fixing plugin tree')
-        CMSPlugin.fix_tree()
         self.stdout.write('all done')
 
     def _update_descendants_tree(self, root):

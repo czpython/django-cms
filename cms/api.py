@@ -36,6 +36,7 @@ from cms.utils.conf import get_cms_setting
 from cms.utils.i18n import get_language_list
 from cms.utils.page import get_available_slug
 from cms.utils.permissions import _thread_locals, current_user
+from cms.utils.plugins import copy_plugins_to_placeholder
 from menus.menu_pool import menu_pool
 
 
@@ -483,9 +484,8 @@ def copy_plugins_to_language(page, source_language, target_language,
         # only_empty is True we check if the placeholder already has plugins and
         # we skip it if has some
         if not only_empty or not placeholder.get_plugins(language=target_language).exists():
-            plugins = list(
-                placeholder.get_plugins(language=source_language).order_by('path'))
-            copied_plugins = copy_plugins.copy_plugins_to(plugins, placeholder, target_language)
+            plugins = list(placeholder.get_plugins(language=source_language))
+            copied_plugins = copy_plugins_to_placeholder(plugins, placeholder, language=target_language)
             copied += len(copied_plugins)
     return copied
 

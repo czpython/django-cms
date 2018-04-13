@@ -11,6 +11,7 @@ from cms.management.commands.subcommands.base import SubcommandsCommand
 from cms.models import Page, StaticPlaceholder, EmptyTitle
 from cms.utils import get_language_list
 from cms.utils.copy_plugins import copy_plugins_to
+from cms.utils.plugins import copy_plugins_to_placeholder
 
 
 class CopyLangCommand(SubcommandsCommand):
@@ -89,7 +90,11 @@ class CopyLangCommand(SubcommandsCommand):
                             'copying plugins from static_placeholder "%s" in "%s" to "%s"\n' % (
                                 static_placeholder.name, from_lang, to_lang)
                         )
-                    copy_plugins_to(plugin_list, static_placeholder.draft, to_lang)
+                    copy_plugins_to_placeholder(
+                        plugins=plugin_list,
+                        placeholder=static_placeholder.draft,
+                        language=to_lang,
+                    )
 
         self.stdout.write('all done')
 

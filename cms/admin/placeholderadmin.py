@@ -573,6 +573,7 @@ class PlaceholderAdminMixin(object):
         if request.POST.get('placeholder_id'):
             placeholder_id = get_int(request.POST.get('placeholder_id'))
             placeholder = Placeholder.objects.get(pk=placeholder_id)
+            assert plugin.placeholder_id != placeholder_id
         else:
             placeholder = None
 
@@ -623,7 +624,7 @@ class PlaceholderAdminMixin(object):
                 plugin=plugin,
                 target_language=target_language,
                 target_placeholder=placeholder,
-                target_position=request.POST['target_position'],
+                target_position=int(request.POST['target_position']),
             )
         elif move_a_copy:
             fetch_tree = True
@@ -633,7 +634,7 @@ class PlaceholderAdminMixin(object):
                 target_parent=target_parent,
                 target_language=target_language,
                 target_placeholder=placeholder,
-                target_position=request.POST['target_position'],
+                target_position=int(request.POST['target_position']),
             )
         elif move_to_clipboard:
             new_plugin = self._cut_plugin(
@@ -649,7 +650,7 @@ class PlaceholderAdminMixin(object):
                 request,
                 plugin=plugin,
                 target_parent=target_parent,
-                target_position=request.POST['target_position'],
+                target_position=int(request.POST['target_position']),
                 target_placeholder=placeholder,
             )
 
@@ -782,7 +783,7 @@ class PlaceholderAdminMixin(object):
 
         source_placeholder.move_plugin(
             plugin=plugin,
-            target_position=int(target_position),
+            target_position=target_position,
             target_placeholder=target_placeholder,
             target_plugin=target_parent,
         )

@@ -294,10 +294,10 @@ class PluginsTestCase(PluginsTestBaseCase):
         db_plugin_2 = CMSPlugin.objects.get(pk=text_plugin_2.pk)
 
         with self.settings(CMS_PERMISSION=False):
-            self.assertEqual(text_plugin_1.position, 0)
-            self.assertEqual(db_plugin_1.position, 0)
-            self.assertEqual(text_plugin_2.position, 1)
-            self.assertEqual(db_plugin_2.position, 1)
+            self.assertEqual(text_plugin_1.position, 1)
+            self.assertEqual(db_plugin_1.position, 1)
+            self.assertEqual(text_plugin_2.position, 2)
+            self.assertEqual(db_plugin_2.position, 2)
             ## Finally we render the placeholder to test the actual content
             context = self.get_context(page_en.get_absolute_url(), page=page_en)
             rendered_placeholder = _render_placeholder(ph_en, context)
@@ -444,63 +444,6 @@ class PluginsTestCase(PluginsTestBaseCase):
             '&lt;script&gt;var bar="hacked"&lt;/script&gt;'
         )
 
-    def test_copy_plugins_method(self):
-        """
-        Test that CMSPlugin copy does not have side effects
-        """
-        # create some objects
-        page_en = api.create_page("CopyPluginTestPage (EN)", "nav_playground.html", "en")
-        page_de = api.create_page("CopyPluginTestPage (DE)", "nav_playground.html", "de")
-        ph_en = page_en.placeholders.get(slot="body")
-        ph_de = page_de.placeholders.get(slot="body")
-
-        # add the text plugin
-        text_plugin_en = api.add_plugin(ph_en, "TextPlugin", "en", body="Hello World")
-        self.assertEqual(text_plugin_en.pk, CMSPlugin.objects.all()[0].pk)
-
-        # add a *nested* link plugin
-        link_plugin_en = api.add_plugin(ph_en, "LinkPlugin", "en", target=text_plugin_en,
-                                        name="A Link", external_link="https://www.django-cms.org")
-        #
-        text_plugin_en.body += plugin_to_tag(link_plugin_en)
-        text_plugin_en.save()
-
-        # the call above to add a child makes a plugin reload required here.
-        text_plugin_en = self.reload(text_plugin_en)
-
-        # setup the plugins to copy
-        plugins = [text_plugin_en, link_plugin_en]
-        # save the old ids for check
-        old_ids = [plugin.pk for plugin in plugins]
-        new_plugins = []
-        plugins_ziplist = []
-        old_parent_cache = {}
-
-        # This is a stripped down version of cms.copy_plugins.copy_plugins_to
-        # to low-level testing the copy process
-        for plugin in plugins:
-            new_plugins.append(plugin.copy_plugin(ph_de, 'de', old_parent_cache))
-            plugins_ziplist.append((new_plugins[-1], plugin))
-
-        for idx, plugin in enumerate(plugins):
-            inst, _ = new_plugins[idx].get_plugin_instance()
-            new_plugins[idx] = inst
-            new_plugins[idx].post_copy(plugin, plugins_ziplist)
-
-        for idx, plugin in enumerate(plugins):
-            # original plugin instance reference should stay unmodified
-            self.assertEqual(old_ids[idx], plugin.pk)
-            # new plugin instance should be different from the original
-            self.assertNotEqual(new_plugins[idx], plugin.pk)
-
-            # text plugins (both old and new) should contain a reference
-            # to the link plugins
-            if plugin.plugin_type == 'TextPlugin':
-                self.assertTrue('Link - A Link' in plugin.body)
-                self.assertTrue('id="%s"' % plugin.get_children()[0].pk in plugin.body)
-                self.assertTrue('Link - A Link' in new_plugins[idx].body)
-                self.assertTrue('id="%s"' % new_plugins[idx].get_children()[0].pk in new_plugins[idx].body)
-
     def test_plugin_position(self):
         page_en = api.create_page("CopyPluginTestPage (EN)", "nav_playground.html", "en")
         placeholder = page_en.placeholders.get(slot="body")  # ID 2
@@ -639,7 +582,7 @@ class PluginsTestCase(PluginsTestBaseCase):
 
         col1_de = self.reload(col1_de)
 
-        new_plugins = col1_de.get_descendants().order_by('path')
+        new_plugins = col1_de.get_descendants()
 
         self.assertEqual(new_plugins.count(), len(old_plugins))
 
@@ -808,17 +751,17 @@ class PluginsTestCase(PluginsTestBaseCase):
         self.assertEqual(Page.objects.search("hi").count(), 0)
         self.assertEqual(Page.objects.search("hello").count(), 1)
 
-    def test_empty_plugin_is_not_ignored(self):
+    def test_empty_plugin_is_ignored(self):
         page = api.create_page("page", "nav_playground.html", "en")
 
         placeholder = page.placeholders.get(slot='body')
 
-        plugin = CMSPlugin(
+        CMSPlugin.objects.create(
             plugin_type='TextPlugin',
             placeholder=placeholder,
             position=1,
-            language=self.FIRST_LANG)
-        plugin.add_root(instance=plugin)
+            language=self.FIRST_LANG,
+        )
 
         # this should not raise any errors, but just ignore the empty plugin
         out = _render_placeholder(placeholder, self.get_context(), width=300)
@@ -858,7 +801,7 @@ class PluginsTestCase(PluginsTestBaseCase):
 
         placeholder = page.placeholders.get(slot='body')
         api.add_plugin(placeholder, "TextPlugin", 'en', body="Hello World")
-        plugins = Text.objects.all().defer('path')
+        plugins = Text.objects.all().defer('position')
         import io
         a = io.BytesIO()
         pickle.dump(plugins[0], a)

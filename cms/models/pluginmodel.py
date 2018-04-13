@@ -307,6 +307,9 @@ class CMSPlugin(six.with_metaclass(PluginModelBase, models.Model)):
         cursor.execute(sql, [self.pk])
         return [item[0] for item in cursor.fetchall()]
 
+    def get_children(self):
+        return self.cmsplugin_set.all()
+
     def get_descendants(self):
         return CMSPlugin.objects.filter(pk__in=self._get_descendants_ids())
 
