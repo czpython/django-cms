@@ -5,7 +5,7 @@ import warnings
 from datetime import datetime, timedelta
 
 from django.contrib import admin
-from django.db import connection, connections, models, router
+from django.db import connection, models
 from django.template.defaultfilters import title
 from django.utils import six
 from django.utils.encoding import python_2_unicode_compatible

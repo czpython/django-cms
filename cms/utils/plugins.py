@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 from copy import deepcopy
 from collections import defaultdict, deque
-from itertools import groupby, starmap
-from operator import attrgetter, itemgetter
+from itertools import starmap
+from operator import itemgetter
 
 from django.utils.encoding import force_text
 from django.utils.lru_cache import lru_cache
@@ -182,7 +182,6 @@ def get_plugin_restrictions(plugin, page=None, restrictions_cache=None):
 
 def copy_plugins_to_placeholder(plugins, placeholder, language=None,
                                 root_plugin=None, start_positions=None):
-    plugin_count = len(plugins)
     plugin_pairs = []
     plugins_by_id = {}
     # Keeps track of the next available position per language.
@@ -216,6 +215,8 @@ def copy_plugins_to_placeholder(plugins, placeholder, language=None,
         try:
             position = positions_by_language[new_plugin.language]
         except KeyError:
+            # TODO: Duplicate call to get_last_plugin_position
+            offset = placeholder.get_last_plugin_position(language) or 0
             # The position is relative to language.
             position = placeholder.get_next_plugin_position(
                 language=new_plugin.language,
@@ -227,7 +228,7 @@ def copy_plugins_to_placeholder(plugins, placeholder, language=None,
             placeholder._shift_plugin_positions(
                 language,
                 start=position,
-                offset=plugin_count,
+                offset=offset,
             )
 
         new_plugin.position = position

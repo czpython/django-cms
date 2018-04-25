@@ -8,7 +8,7 @@ from django.core.urlresolvers import NoReverseMatch
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db import connection, connections, router
-from django.db.models import Model, ManyToManyField
+from django.db.models import ManyToManyField
 from django.db.models.base import ModelBase
 from django.utils import six, timezone
 from django.utils.six import text_type
@@ -432,9 +432,6 @@ class CMSPlugin(six.with_metaclass(PluginModelBase, models.Model)):
         result = json.dumps(self.get_breadcrumb())
         result = mark_safe(result)
         return result
-
-    def num_children(self):
-        return self.numchild
 
     def notify_on_autoadd(self, request, conf):
         """

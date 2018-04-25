@@ -10,7 +10,6 @@ from cms.api import copy_plugins_to_language
 from cms.management.commands.subcommands.base import SubcommandsCommand
 from cms.models import Page, StaticPlaceholder, EmptyTitle
 from cms.utils import get_language_list
-from cms.utils.copy_plugins import copy_plugins_to
 from cms.utils.plugins import copy_plugins_to_placeholder
 
 

@@ -35,13 +35,12 @@ from cms.models.pluginmodel import CMSPlugin
 from cms.plugin_pool import plugin_pool
 from cms.signals import pre_placeholder_operation, post_placeholder_operation
 from cms.toolbar.utils import get_plugin_tree_as_json
-from cms.utils import copy_plugins, get_current_site
+from cms.utils import get_current_site
 from cms.utils.conf import get_cms_setting
 from cms.utils.i18n import get_language_list, get_language_code
 from cms.utils.plugins import (
     copy_plugins_to_placeholder,
     has_reached_plugin_limit,
-    reorder_plugins,
 )
 from cms.utils.urlutils import admin_reverse
 
@@ -755,6 +754,7 @@ class PlaceholderAdminMixin(object):
         return new_plugins
 
     def _move_plugin(self, request, plugin, target_position, target_placeholder=None, target_parent=None):
+        language = plugin.language
         source_placeholder = plugin.placeholder
 
         if not self.has_move_plugin_permission(request, plugin, source_placeholder):
@@ -777,6 +777,7 @@ class PlaceholderAdminMixin(object):
             source_language=plugin.language,
             source_placeholder=source_placeholder,
             source_parent_id=plugin.parent_id,
+            target_language=language,
             target_placeholder=target_placeholder,
             target_parent_id=target_parent_id,
         )
@@ -789,26 +790,25 @@ class PlaceholderAdminMixin(object):
         )
 
         # Refresh plugin to get new position values
-        plugin.refresh_from_db()
+        updated_plugin = plugin.reload()
 
         if target_placeholder:
-            target_placeholder.mark_as_dirty(plugin.language, clear_cache=False)
-
-        source_placeholder.mark_as_dirty(plugin.language, clear_cache=False)
+            target_placeholder.mark_as_dirty(language, clear_cache=False)
+        source_placeholder.mark_as_dirty(language, clear_cache=False)
 
         self._send_post_placeholder_operation(
             request,
             operation=operations.MOVE_PLUGIN,
-            plugin=plugin.get_bound_plugin(),
+            plugin=updated_plugin.get_bound_plugin(),
             token=action_token,
-            source_language=plugin.language,
+            source_language=language,
             source_placeholder=source_placeholder,
-            source_parent_id=plugin.parent_id,
-            target_language=plugin.language,
+            source_parent_id=updated_plugin.parent_id,
+            target_language=language,
             target_placeholder=target_placeholder,
             target_parent_id=target_parent_id,
         )
-        return plugin
+        return updated_plugin
 
     def _cut_plugin(self, request, plugin, target_language,  target_placeholder):
         if not self.has_move_plugin_permission(request, plugin, target_placeholder):

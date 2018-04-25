@@ -7,10 +7,21 @@ from cms.models.placeholdermodel import Placeholder
 from cms.models.pluginmodel import CMSPlugin
 from cms.tests.test_plugins import PluginsTestBaseCase
 from cms.utils.compat.tests import UnittestCompatMixin
-from cms.utils.copy_plugins import copy_plugins_to
+from cms.utils.plugins import copy_plugins_to_placeholder
 
 
 class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
+
+    def compare_plugin_tree(self, tree, placeholder):
+        counter = 1
+        plugins = placeholder.get_plugins()
+
+        for plugin, data in zip(plugins, tree):
+            msg = 'Expected %s %s. Got %s instead.'
+            self.assertEqual(plugin.pk, data[0], msg % ('id', data[0], plugin.pk))
+            self.assertEqual(plugin.position, counter, msg % ('position', counter, plugin.position))
+            self.assertEqual(plugin.parent_id, data[1], msg % ('parent', data[1], plugin.parent_id))
+            counter += 1
 
     def copy_placeholders_and_check_results(self, placeholders):
         """
@@ -29,9 +40,9 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
 
             # copy them to a new placeholder
             copied_placeholder = Placeholder.objects.create(slot=original_placeholder.slot)
-            copy_plugins_to(
+            copy_plugins_to_placeholder(
                 original_placeholder.get_plugins(),
-                copied_placeholder
+                placeholder=copied_placeholder,
             )
 
             copied_plugins = copied_placeholder.get_plugins()
@@ -48,65 +59,11 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
                     Text.objects.get(id=original.id).body,
                     Text.objects.get(id=copy.id).body
                 )
-
-            # Now build a *tree* of the plugins, and match those - it's not
-            # enough just to compare querysets as above; we should *also* check
-            # that when we build a tree, the various nodes are assembled as we
-            # would expect. We will pump the trees into a pair of lists:
-            original_plugins_list = []
-            copied_plugins_list = []
-
-            # This function builds the tree of plugins, starting from its roots.
-            # In that respect it's like many of the plugin tree-building
-            # routines elsewhere in the system.
-            def plugin_list_from_tree(roots, plugin_list):
-                for plugin in roots:
-                    plugin_list.append(plugin)
-                    # recurse over the set of nodes
-                    plugin_list_from_tree(plugin.get_children(), plugin_list)
-
-            # build the tree for each set of plugins
-            plugin_list_from_tree(original_plugins.filter(depth=1), original_plugins_list)
-            plugin_list_from_tree(copied_plugins.filter(depth=1), copied_plugins_list)
-
-            self.assertEqual(len(original_plugins_list), original_plugins.count())
-            self.assertEqual(len(copied_plugins_list), copied_plugins.count())
-            # Check that each pair of items in the two lists match, in lots of
-            # different ways
-            for original, copy in zip(original_plugins_list, copied_plugins_list):
-                original_text_plugin = Text.objects.get(id=original.id)
-                copied_text_plugin = Text.objects.get(id=copy.id)
-
-                # This first one is a sanity test, just to prove that we aren't
-                # simply comparing *exactly the same items* in all these tests.
-                # It could happen...
-                self.assertNotEquals(original.id, copy.id)
+                self.assertEqual(original.position, copy.position)
                 self.assertEqual(
-                    original_text_plugin.body,
-                    copied_text_plugin.body
+                    original._get_descendants_count(),
+                    copy._get_descendants_count()
                 )
-                self.assertEqual(
-                    original_text_plugin.depth,
-                    copied_text_plugin.depth
-                )
-                self.assertEqual(
-                    original_text_plugin.position,
-                    copied_text_plugin.position
-                )
-                self.assertEqual(
-                    original_text_plugin.numchild,
-                    copied_text_plugin.numchild
-                )
-
-                self.assertEqual(
-                    original_text_plugin.get_descendant_count(),
-                    copied_text_plugin.get_descendant_count()
-                )
-                self.assertEqual(
-                    original_text_plugin.get_ancestors().count(),
-                    copied_text_plugin.get_ancestors().count()
-                )
-
         # just in case the test method that called us wants it:
         return copied_placeholder
 
@@ -155,12 +112,7 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
         plugin_1 = add_plugin(placeholder, u"TextPlugin", u"en",
                               body=u"01")
 
-        # IMPORTANT: plugins must be reloaded, before they can be assigned
-        # as a parent. Otherwise, the MPTT structure doesn't seem to rebuild
-        # properly.
-
         # child of plugin_1
-        plugin_1 = self.reload(plugin_1)
         plugin_2 = add_plugin(placeholder, u"TextPlugin", u"en",
                               body=u"02", target=plugin_1,
         )
@@ -171,7 +123,6 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
             [CMSPlugin.objects.get(id=plugin_2.pk)])
 
         # create a second child of plugin_1
-        plugin_1 = self.reload(plugin_1)
         plugin_3 = add_plugin(placeholder, u"TextPlugin", u"en",
                               body=u"03", target=plugin_1
         )
@@ -186,7 +137,6 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
             ])
 
         # child of plugin_2
-        plugin_2 = self.reload(plugin_2)
         plugin_4 = add_plugin(placeholder, u"TextPlugin", u"en",
                               body=u"04", target=plugin_2
         )
@@ -206,15 +156,10 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
                 CMSPlugin.objects.get(id=plugin_3.pk),
             ],
         )
-        plugin_1 = self.reload(plugin_1)
         # create a second root plugin
         plugin_5 = add_plugin(placeholder, u"TextPlugin", u"en", body=u"05")
-        left = CMSPlugin.objects.filter(parent__isnull=True)[0]
-        plugin_5 = self.reload(plugin_5)
-        plugin_5 = plugin_5.move(left, pos='right')
 
         # child of plugin_5
-        plugin_5 = self.reload(plugin_5)
         plugin_6 = add_plugin(placeholder, u"TextPlugin", u"en",
                               body=u"06", target=plugin_5
         )
@@ -225,8 +170,7 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
             CMSPlugin.objects.get(id=plugin_5.pk).get_children(),
             [CMSPlugin.objects.get(id=plugin_6.pk)])
 
-        # child of plugin_6
-        plugin_5 = self.reload(plugin_5)
+        # child of plugin_5
         plugin_7 = add_plugin(placeholder, u"TextPlugin", u"en",
                               body=u"07", target=plugin_5
         )
@@ -262,9 +206,8 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
             ])
 
         # child of plugin_3
-        plugin_3 = self.reload(plugin_3)
         plugin_9 = add_plugin(placeholder, u"TextPlugin", u"en",
-                              body=u"09", target=plugin_3
+                              body=u"09", target=self.reload(plugin_3),
         )
 
         # plugin_9 should be plugin_3's child
@@ -273,9 +216,8 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
             [CMSPlugin.objects.get(id=plugin_9.pk)])
 
         # child of plugin_4
-        plugin_4 = self.reload(plugin_4)
         plugin_10 = add_plugin(placeholder, u"TextPlugin", u"en",
-                               body=u"10", target=plugin_4
+                               body=u"10", target=self.reload(plugin_4)
         )
 
         # plugin_10 should be plugin_4's child
@@ -287,7 +229,6 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
         self.assertEqual(original_plugins.count(), 10)
 
         # elder sibling of plugin_1
-        plugin_1 = self.reload(plugin_1)
         plugin_11 = add_plugin(placeholder, u"TextPlugin", u"en",
                                body=u"11",
                                target=plugin_1,
@@ -302,10 +243,9 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
             ])
 
         # elder sibling of plugin_4
-        plugin_4 = self.reload(plugin_4)
         plugin_12 = add_plugin(placeholder, u"TextPlugin", u"en",
                                body=u"12",
-                               target=plugin_4,
+                               target=self.reload(plugin_4),
                                position="left"
         )
         self.assertSequenceEqual(
@@ -317,10 +257,9 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
             ])
 
         # younger sibling of plugin_7
-        plugin_7 = self.reload(plugin_7)
         plugin_13 = add_plugin(placeholder, u"TextPlugin", u"en",
                                body=u"13",
-                               target=plugin_7,
+                               target=self.reload(plugin_7),
                                position="right"
         )
 
@@ -333,7 +272,6 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
             ])
 
         # new sibling of plugin_5
-        plugin_5 = self.reload(plugin_5)
         plugin_14 = add_plugin(placeholder, u"TextPlugin", u"en",
                                body=u"14"
         )
@@ -347,49 +285,149 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
                 CMSPlugin.objects.get(id=plugin_14.pk)
             ])
 
+        tree = [
+            (plugin_11.pk, None),
+            (plugin_1.pk, None),
+            (plugin_2.pk, plugin_1.pk),
+            (plugin_12.pk, plugin_2.pk),
+            (plugin_4.pk, plugin_2.pk),
+            (plugin_10.pk, plugin_4.pk),
+            (plugin_8.pk, plugin_2.pk),
+            (plugin_3.pk, plugin_1.pk),
+            (plugin_9.pk, plugin_3.pk),
+            (plugin_5.pk, None),
+            (plugin_6.pk, plugin_5.pk),
+            (plugin_7.pk, plugin_5.pk),
+            (plugin_13.pk, plugin_5.pk),
+            (plugin_14.pk, None),
+        ]
         self.copy_placeholders_and_check_results([placeholder])
+        self.compare_plugin_tree(tree, placeholder)
 
         # now let's move plugins around in the tree
 
         # move plugin_2 before plugin_11
-        plugin_2 = self.reload(plugin_2)
-        plugin_1 = self.reload(plugin_1)
-        plugin_2.parent_id = plugin_1.parent_id
-        plugin_2.save()
-        plugin_2 = plugin_2.move(target=plugin_1, pos="left")
+        tree = [
+            (plugin_2.pk, None),
+            (plugin_12.pk, plugin_2.pk),
+            (plugin_4.pk, plugin_2.pk),
+            (plugin_10.pk, plugin_4.pk),
+            (plugin_8.pk, plugin_2.pk),
+            (plugin_11.pk, None),
+            (plugin_1.pk, None),
+            (plugin_3.pk, plugin_1.pk),
+            (plugin_9.pk, plugin_3.pk),
+            (plugin_5.pk, None),
+            (plugin_6.pk, plugin_5.pk),
+            (plugin_7.pk, plugin_5.pk),
+            (plugin_13.pk, plugin_5.pk),
+            (plugin_14.pk, None),
+        ]
+        placeholder.move_plugin(plugin=self.reload(plugin_2), target_position=1)
+        self.compare_plugin_tree(tree, placeholder)
         self.copy_placeholders_and_check_results([placeholder])
 
         # move plugin_6 after plugin_7
-        plugin_6 = self.reload(plugin_6)
+        tree = [
+            (plugin_2.pk, None),
+            (plugin_12.pk, plugin_2.pk),
+            (plugin_4.pk, plugin_2.pk),
+            (plugin_10.pk, plugin_4.pk),
+            (plugin_8.pk, plugin_2.pk),
+            (plugin_11.pk, None),
+            (plugin_1.pk, None),
+            (plugin_3.pk, plugin_1.pk),
+            (plugin_9.pk, plugin_3.pk),
+            (plugin_5.pk, None),
+            (plugin_7.pk, plugin_5.pk),
+            (plugin_6.pk, plugin_5.pk),
+            (plugin_13.pk, plugin_5.pk),
+            (plugin_14.pk, None),
+        ]
         plugin_7 = self.reload(plugin_7)
-        plugin_6.parent_id = plugin_7.parent_id
-        plugin_6.save()
-        plugin_6 = plugin_6.move(target=plugin_7, pos="right")
+        placeholder.move_plugin(
+            plugin=self.reload(plugin_6),
+            target_position=plugin_7.position,
+            target_plugin=plugin_7.parent,
+        )
+        self.compare_plugin_tree(tree, placeholder)
         self.copy_placeholders_and_check_results([placeholder])
 
         # move plugin_3 before plugin_2
-        plugin_2 = self.reload(plugin_2)
-        plugin_3 = self.reload(plugin_3)
-        plugin_3.parent_id = plugin_2.parent_id
-        plugin_3.save()
-        plugin_3 = plugin_3.move(target=plugin_2, pos="left")
+        tree = [
+            (plugin_3.pk, None),
+            (plugin_9.pk, plugin_3.pk),
+            (plugin_2.pk, None),
+            (plugin_12.pk, plugin_2.pk),
+            (plugin_4.pk, plugin_2.pk),
+            (plugin_10.pk, plugin_4.pk),
+            (plugin_8.pk, plugin_2.pk),
+            (plugin_11.pk, None),
+            (plugin_1.pk, None),
+            (plugin_5.pk, None),
+            (plugin_7.pk, plugin_5.pk),
+            (plugin_6.pk, plugin_5.pk),
+            (plugin_13.pk, plugin_5.pk),
+            (plugin_14.pk, None),
+        ]
+        placeholder.move_plugin(
+            plugin=self.reload(plugin_3),
+            target_position=1,
+            target_plugin=None,
+        )
+        self.compare_plugin_tree(tree, placeholder)
         self.copy_placeholders_and_check_results([placeholder])
 
         # make plugin_3 plugin_2's first-child
-        plugin_2 = self.reload(plugin_2)
-        plugin_3 = self.reload(plugin_3)
-        plugin_3.parent_id = plugin_2.pk
-        plugin_3.save()
-        plugin_3 = plugin_3.move(target=plugin_2, pos="first-child")
+        tree = [
+            (plugin_2.pk, None),
+            (plugin_3.pk, plugin_2.pk),
+            (plugin_9.pk, plugin_3.pk),
+            (plugin_12.pk, plugin_2.pk),
+            (plugin_4.pk, plugin_2.pk),
+            (plugin_10.pk, plugin_4.pk),
+            (plugin_8.pk, plugin_2.pk),
+            (plugin_11.pk, None),
+            (plugin_1.pk, None),
+            (plugin_5.pk, None),
+            (plugin_7.pk, plugin_5.pk),
+            (plugin_6.pk, plugin_5.pk),
+            (plugin_13.pk, plugin_5.pk),
+            (plugin_14.pk, None),
+        ]
+        placeholder.move_plugin(
+            plugin=self.reload(plugin_3),
+            target_position=4,
+            target_plugin=self.reload(plugin_2),
+        )
+        self.compare_plugin_tree(tree, placeholder)
         self.copy_placeholders_and_check_results([placeholder])
 
         # make plugin_7 plugin_2's first-child
-        plugin_3 = self.reload(plugin_3)
-        plugin_7 = self.reload(plugin_7)
-        plugin_7.parent_id = plugin_3.parent_id
-        plugin_7.save()
-        plugin_7 = plugin_7.move(target=plugin_3, pos="right")
-        self.copy_placeholders_and_check_results([placeholder, ])
+        tree = [
+            (plugin_2.pk, None),
+            (plugin_7.pk, plugin_2.pk),
+            (plugin_3.pk, plugin_2.pk),
+            (plugin_9.pk, plugin_3.pk),
+            (plugin_12.pk, plugin_2.pk),
+            (plugin_4.pk, plugin_2.pk),
+            (plugin_10.pk, plugin_4.pk),
+            (plugin_8.pk, plugin_2.pk),
+            (plugin_11.pk, None),
+            (plugin_1.pk, None),
+            (plugin_5.pk, None),
+            (plugin_6.pk, plugin_5.pk),
+            (plugin_13.pk, plugin_5.pk),
+            (plugin_14.pk, None),
+        ]
+        plugin_2 = self.reload(plugin_2)
+        placeholder.move_plugin(
+            plugin=self.reload(plugin_7),
+            target_position=plugin_2.position + 1,
+            target_plugin=plugin_2,
+        )
+        self.compare_plugin_tree(tree, placeholder)
+        self.copy_placeholders_and_check_results([placeholder])
 
     def test_nested_plugin_on_page(self):
         """

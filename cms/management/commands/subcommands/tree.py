@@ -3,7 +3,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 from collections import OrderedDict
 
-from cms.models import CMSPlugin, TreeNode
+from cms.models import TreeNode
 
 from .base import SubcommandsCommand
 
