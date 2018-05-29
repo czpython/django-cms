@@ -605,7 +605,8 @@ class Placeholder(models.Model):
 
         target_tree = self.get_plugins(plugin.language)
         last_plugin = target_tree.last()
-        source_plugin_range = (plugin.position, plugin.position + plugin._get_descendants_count())
+        source_plugin_desc_count = plugin._get_descendants_count()
+        source_plugin_range = (plugin.position, plugin.position + source_plugin_desc_count)
 
         if target_position < plugin.position:
             # Moving left
@@ -625,13 +626,14 @@ class Placeholder(models.Model):
             ).update(position=models.F('position') - last_plugin.position)
         else:
             # Moving right
-            left_side_plugin = target_tree.get(position=target_position)
-            left_side_plugin_range = (target_position, target_position + left_side_plugin._get_descendants_count())
             # Make a big hole on the left side of the target position,
             # by shifting all left nodes further to the left, excluding the current plugin
             # but including the target plugin and its descendants.
+            # Left node in the common case is target_position but if the current plugin
+            # has descendants then left node is the closest node to the right side of the
+            # last descendant.
             (target_tree
-             .filter(position__lte=left_side_plugin_range[1])
+             .filter(position__lte=target_position + source_plugin_desc_count)
              .exclude(position__range=source_plugin_range)
              ).update(position=(models.F('position') - last_plugin.position))
 

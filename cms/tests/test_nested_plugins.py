@@ -397,7 +397,7 @@ class NestedPluginsTestCase(PluginsTestBaseCase, UnittestCompatMixin):
         ]
         placeholder.move_plugin(
             plugin=self.reload(plugin_3),
-            target_position=4,
+            target_position=2,
             target_plugin=self.reload(plugin_2),
         )
         self.compare_plugin_tree(tree, placeholder)
