@@ -145,6 +145,16 @@ matrix:
       env: FRONTEND=1 INTEGRATION=1 INTEGRATION_TESTS_BUCKET=2 DJANGO=1.11 DATABASE_URL='sqlite://localhost/testdb.sqlite'
     - python: 3.6
       env: FRONTEND=1 INTEGRATION=1 INTEGRATION_TESTS_BUCKET=3 DJANGO=1.11 DATABASE_URL='sqlite://localhost/testdb.sqlite'
+    - python: 3.6
+      env: DJANGO=1.11 DATABASE_URL='sqlite://localhost/:memory:'
+    - python: 3.5
+      env: DJANGO=1.11 DATABASE_URL='sqlite://localhost/:memory:'
+    - python: 2.7
+      env: DJANGO=1.11 DATABASE_URL='sqlite://localhost/:memory:'
+    - python: 3.6
+      env: DJANGO=1.11 DATABASE_URL='mysql://root@127.0.0.1/djangocms_test'
+    - python: 2.7
+      env: DJANGO=1.11 DATABASE_URL='mysql://root@127.0.0.1/djangocms_test'
 
   fast_finish: true
 
