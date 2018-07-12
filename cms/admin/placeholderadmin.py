@@ -677,6 +677,17 @@ class PlaceholderAdminMixin(object):
             target_placeholder=target_placeholder,
             target_parent_id=target_parent_id,
         )
+
+        target_last_plugin = target_placeholder.get_last_plugin(plugin.language)
+
+        if target_last_plugin:
+            target_offset = target_last_plugin.position + len(plugins)
+            target_placeholder._shift_plugin_positions(
+                target_language,
+                start=target_position,
+                offset=target_offset,
+            )
+
         new_plugins = copy_plugins_to_placeholder(
             plugins,
             placeholder=target_placeholder,
@@ -717,12 +728,16 @@ class PlaceholderAdminMixin(object):
             target_placeholder=target_placeholder,
         )
 
-        if target_placeholder.has_plugins(target_language):
+        target_last_plugin = target_placeholder.get_last_plugin(plugin.language)
+
+        if target_last_plugin:
+            target_offset = target_last_plugin.position + len(plugins)
             target_placeholder._shift_plugin_positions(
                 target_language,
                 start=target_position,
-                offset=len(plugins),
+                offset=target_offset,
             )
+
         new_plugins = copy_plugins_to_placeholder(
             plugins,
             placeholder=target_placeholder,

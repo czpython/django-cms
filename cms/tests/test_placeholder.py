@@ -250,6 +250,63 @@ class PlaceholderTestCase(TransactionCMSTestCase, UnittestCompatMixin):
         self.assertTrue(clipboard_plugins.filter(plugin_type='NoCustomModel').exists())
         self.assertEqual(len(clipboard_plugins), 1)
 
+    def test_paste_plugin_from_clipboard(self):
+        superuser = self.get_superuser()
+        page_en = create_page("CopyPluginTestPage (EN)", "nav_playground.html", "en")
+        ph_target = page_en.placeholders.get(slot="body")
+        add_plugin(ph_target, "LinkPlugin", "en", name="A Link", external_link="https://www.django-cms.org")
+        user_settings = UserSettings.objects.create(
+            language="en",
+            user=superuser,
+            clipboard=Placeholder.objects.create(),
+        )
+        plugin = add_plugin(
+            user_settings.clipboard,
+            "LinkPlugin",
+            language="en",
+            name="A Link",
+            external_link="https://www.django-cms.org",
+        )
+        endpoint = self.get_move_plugin_uri(plugin)
+
+        # Paste LinkPlugin to first position
+        data = {
+            'plugin_id': plugin.pk,
+            'move_a_copy': True,
+            'target_language': 'en',
+            'target_position': 1,
+            'placeholder_id': ph_target.pk,
+        }
+
+        with self.login_user_context(superuser):
+            # Paste plugin from the clipboard into target placeholder
+            response = self.client.post(endpoint, data)
+            self.assertEqual(response.status_code, 200)
+
+        plugins = ph_target.get_plugins('en')
+        self.assertTrue(plugins.filter(plugin_type='LinkPlugin').exists())
+        self.assertEqual(len(plugins), 2)
+
+        # Paste LinkPlugin as child of first LinkPlugin
+        target = ph_target.get_plugins('en').get(position=1)
+        data = {
+            'plugin_id': plugin.pk,
+            'move_a_copy': True,
+            'target_language': 'en',
+            'target_position': 2,
+            'plugin_parent': target.pk,
+            'placeholder_id': ph_target.pk,
+        }
+
+        with self.login_user_context(superuser):
+            # Paste plugin from the clipboard into target placeholder
+            response = self.client.post(endpoint, data)
+            self.assertEqual(response.status_code, 200)
+
+        plugins = ph_target.get_plugins('en')
+        self.assertTrue(plugins.filter(plugin_type='LinkPlugin').exists())
+        self.assertEqual(len(plugins), 3)
+
     def test_placeholder_render_ghost_plugin(self):
         """
         Tests a placeholder won't render a ghost plugin.
